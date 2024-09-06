@@ -170,7 +170,7 @@ int xdp_prog1(struct CTXTYPE *ctx) {
 #endif
     }
 
-#if _ACTION_DROP | _ACTION_REFLECT
+#if _ACTION_DROP || _ACTION_REFLECT
     return XDP_DROP;
 #else
     return bpf_redirect(_OUTPUT_INTERFACE_IFINDEX, 0);
