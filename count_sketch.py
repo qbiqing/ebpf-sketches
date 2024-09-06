@@ -178,7 +178,7 @@ if __name__ == '__main__':
     parser.add_argument("-i", "--interface", required=True, type=str, help="The name of the interface where to attach the program")
     parser.add_argument("-m", "--mode", choices=["NATIVE", "SKB", "TC"], default="NATIVE", type=str,
                         help="The default mode where to attach the XDP program")
-    parser.add_argument("-a", "--action", choices=["DROP", "REDIRECT"], default="DROP", type=str, help="Final action to apply")
+    parser.add_argument("-a", "--action", choices=["DROP", "REDIRECT", "REFLECT"], default="DROP", type=str, help="Final action to apply")
     parser.add_argument("-o", "--output-iface", type=str, help="The output interface where to redirect packets. Valid only if action is REDIRECT")    
     parser.add_argument("-r", "--read", type=int, help="Read throughput after X time and print result")
     parser.add_argument("-q", "--quiet", action="store_true", help="Do not print debug information")
@@ -195,10 +195,10 @@ if __name__ == '__main__':
     print_bytes = args.count_bytes
 
     if action == "REDIRECT":
-        if hasattr(args, "output_iface"):
+        try:
             ip = pyroute2.IPRoute()
             out_idx = ip.link_lookup(ifname=args.output_iface)[0]
-        else:
+        except:
             print("When the action is REDIRECT you need to set the output interface")
             exit()
 
@@ -232,10 +232,10 @@ if __name__ == '__main__':
     custom_cflags.append(f"-D_MAX_HEAP_ENTRIES={MAX_HEAP_ENTRIES}")
     custom_cflags.append(f"-D_SEED_HASHFN={SEED_HASHFN}")
 
-    if action == "DROP":
-        custom_cflags.append("-D_ACTION_DROP=1")
+    if action == "DROP" or action == "REFLECT":
+        custom_cflags.append("-D_ACTION_DROP=1") if action == "DROP" else custom_cflags.append("-D_ACTION_DROP=0")
+        custom_cflags.append("-D_ACTION_REFLECT=1") if action == "REFLECT" else custom_cflags.append("-D_ACTION_REFLECT=0")
     else:
-        custom_cflags.append("-D_ACTION_DROP=0")
         custom_cflags.append(f"-D_OUTPUT_INTERFACE_IFINDEX={out_idx}")
 
     if print_pkts:
@@ -255,10 +255,14 @@ if __name__ == '__main__':
     fn = b.load_func("xdp_prog1", hook, None)
 
     if hook == BPF.XDP:
-        b.attach_xdp(device, fn, flags)
-        if action == "REDIRECT":
-            out_fn = b.load_func("xdp_dummy", BPF.XDP)
-            b.attach_xdp(args.output_iface, out_fn, flags)
+        if action == "REFLECT":
+            out_fn = b.load_func("xdp_reflect", BPF.XDP)
+            b.attach_xdp(device, out_fn, flags)
+        else:    
+            b.attach_xdp(device, fn, flags)
+            if action == "REDIRECT":
+                out_fn = b.load_func("xdp_dummy", BPF.XDP)
+                b.attach_xdp(args.output_iface, out_fn, flags)    
     else:
         ip = pyroute2.IPRoute()
         ipdb = pyroute2.IPDB(nl=ip)
